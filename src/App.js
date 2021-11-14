@@ -47,9 +47,19 @@ function Like() {
   );
 }
 
+function getParseFloat(value) {
+  if (Number.isNaN(Number.parseFloat(value))) {
+    return 0;
+  }
+
+  return parseFloat(value);
+}
+
 const App = () => {
   const [walletAddress, setWalletAddress] = useState(null);
   const [inputValue, setInputValue] = useState('');
+  const [modalState, setModalState] = useState({ toPubkey: '', show: false });
+  const [amount, setAmount] = useState(0);
   const [gifList, setGifList] = useState([]);
 
   const checkIfWalletIsConnected = async () => {
@@ -206,59 +216,48 @@ const App = () => {
     }
   }
 
-  const tipUser = async (toPubkey) => {
+  const tipUser = async () => {
     try {
       const { solana } = window;
 
-      const { Transaction, SystemProgram, sendAndConfirmTransaction, clusterApiUrl, Connection, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+      const { Transaction, SystemProgram, clusterApiUrl, Connection, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 
       let connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+
       const payer = await solana.connect();
       let fromPubkey = payer.publicKey;
 
       let transaction = new Transaction();
 
-      // transaction.add(
-      //   SystemProgram.transfer({
-      //     fromPubkey,
-      //     toPubkey,
-      //     lamports: LAMPORTS_PER_SOL
-      //   })
-      // );
+      let blockhashObj = await connection.getRecentBlockhash();
+      transaction.recentBlockhash = blockhashObj.blockhash;
+      transaction.feePayer = fromPubkey;
 
-      let fromKeypair = Keypair.generate();
-      let toKeypair = Keypair.generate();
-
-      // transaction.add(
-      //   SystemProgram.transfer({
-      //     fromPubkey: fromKeypair.publicKey,
-      //     toPubkey: toKeypair.publicKey,
-      //     lamports: LAMPORTS_PER_SOL
-      //   })
-      // );
-
-      // let keypair = Keypair.generate();
-
-      // await sendAndConfirmTransaction(
-      //   connection,
-      //   transaction,
-      //   [payer]
-      // );
-
-      let toAccount = web3.Keypair.generate();
-      let transferTransaction = new web3.Transaction().add(
-        web3.SystemProgram.transfer({
-          fromPubkey: payer.publicKey,
-          toPubkey: toAccount.publicKey,
-          lamports: 1000,
-        }),
+      transaction.add(
+        SystemProgram.transfer({
+          fromPubkey,
+          toPubkey: modalState.toPubkey,
+          lamports: LAMPORTS_PER_SOL * getParseFloat(amount),
+        })
       );
-      await web3.sendAndConfirmTransaction(connection, transferTransaction, [payer])
+
+      const signedTransaction = await solana.signTransaction(
+        transaction
+      );
+
+      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+      console.log(signature);
+
+      setModalState({ show: false, toPubkey: '' });
     } catch (error) {
       console.log('error:::', error);
     } finally {
       console.log('we are done !');
     }
+  };
+
+  const showModal = (toPubkey) => {
+    setModalState({ ...modalState, toPubkey, show: true });
   };
 
   const renderConnectedContainer = () => {
@@ -306,7 +305,7 @@ const App = () => {
                       <span title={userLikedGif ? 'unlike' : 'like'} onClick={() => (userLikedGif ? unlikeGif(item.gifLink) : likeGif(item.gifLink))}><Like /></span>
                     </div>
 
-                    <button onClick={() => tipUser(item?.userAddress)} type="submit" className="cta-button submit-gif-button tip">$ tip</button>
+                    <button onClick={() => showModal(item?.userAddress)} type="submit" className="cta-button submit-gif-button tip">$ tip</button>
                   </div>
 
                   <p className="owner" title="copy address">{item?.userAddress?.toString()}</p>
@@ -318,6 +317,39 @@ const App = () => {
       </div>
     );
   };
+
+  const Modal = () => (
+    <div className={`modal ${modalState.show ? 'show' : ''}`}>
+      <div className="modal__content">
+
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+
+            tipUser();
+          }}
+          className="connected-container"
+        >
+          <label>Amount in $sol</label>
+
+          <div>
+            <input
+              type="number"
+              placeholder="Enter amount $sol"
+              value={amount}
+              min={0}
+              step="0.0001"
+              onChange={(e) => setAmount(e.target.value)}
+            />
+            <button type="submit" className="cta-button submit-gif-button">Submit</button>
+          </div>
+        </form>
+
+        <span onClick={() => setModalState({ ...modalState, show: false })} className="modal__close">&times;</span>
+      </div>
+    </div>
+  );
 
   useEffect(() => {
     const onLoad = async () => {
@@ -359,6 +391,8 @@ const App = () => {
           >{`built by @${TWITTER_HANDLE}`}</a>
         </div>
       </div>
+
+      <Modal key="modal" />
     </div>
   );
 };
